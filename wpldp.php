@@ -1,12 +1,12 @@
 <?php
 /**
  * Plugin Name: WP LDP
- * Plugin URI: http://www.happy-dev.fr
+ * Plugin URI: https://github.com/Open-Initiative/wpldp
  * Description: This is a test for LDP
  * Text Domain: wpldp
- * Version: 0.1
- * Author: Sylvain LE BON
- * Author URI: http://www.happy-dev.fr/team/sylvain
+ * Version: 0.9
+ * Author: Sylvain LE BON, Benoit ALESSANDRONI
+ * Author URI: http://www.happy-dev.fr/team/sylvain, http://benoit-alessandroni.fr/
  * License: GPL2
  */
 
@@ -38,12 +38,13 @@ if (!class_exists('WpLdp')) {
         add_action( 'init', array($this, 'create_ldp_type'));
         add_action( 'init', array($this, 'add_poc_rewrite_rule'));
         add_action( 'init', array($this, 'register_connection_types'));
-        add_action( 'edit_form_after_title', array($this, 'myprefix_edit_form_after_title'));
+        add_action( 'edit_form_advanced', array($this, 'wpldp_edit_form_advanced'));
         add_action( 'save_post', array($this, 'save_ldp_meta_for_post'));
 
         add_filter( 'template_include', array($this, 'include_template_function'));
         add_action( 'template_redirect', array($this, 'my_page_template_redirect' ));
         add_action( 'add_meta_boxes', array($this, 'display_container_meta_box' ));
+        add_action( 'add_meta_boxes', array($this, 'display_media_meta_box' ));
 
         add_action( 'admin_footer', array($this, 'my_action_javascript' )); // Write our JS below here
 
@@ -178,18 +179,19 @@ if (!class_exists('WpLdp')) {
             __('Containers', 'wpldp'),
             array($this, 'container_meta_box_callback'),
             $post_type,
-            'side'
+            'normal',
+            'high'
           );
 
         endif;
       }
 
       /**
-       	 * Generate the HTML for the radio button based meta box
-       	 *
-       	 * @param type
-       	 * @return void
-      	 */
+         * Generate the HTML for the radio button based meta box
+         *
+         * @param type
+         * @return void
+         */
       function container_meta_box_callback($post) {
         wp_nonce_field(
           'wpldp_save_container_box_data',
@@ -213,6 +215,31 @@ if (!class_exists('WpLdp')) {
           echo '</li>';
         }
         echo "</ul>";
+      }
+
+      /**
+         * Add an access to the media library from the ldp_resource edition page
+         *
+         * @param type
+         * @return void
+         */
+      function display_media_meta_box ( $post_type ) {
+        if ( $post_type == 'ldp_resource' ) {
+          add_meta_box(
+            'ldp_mediadiv',
+            __('Media', 'wpldp'),
+            array($this, 'media_meta_box_callback'),
+            $post_type,
+            'side'
+          );
+        }
+      }
+
+      function media_meta_box_callback($post) {
+          echo '<p>' . __('If you need to upload a media during your editing, click here.', 'wpldp') . '</p>';
+          echo '<a href="#" class="button insert-media add-media" data-editor="content" title="Add Media">';
+          echo '  <span class="wp-media-buttons-icon"></span> Add Media';
+          echo '</a>';
       }
 
       /**
@@ -269,7 +296,7 @@ if (!class_exists('WpLdp')) {
       ################################
       # Admin form
       ################################
-      function myprefix_edit_form_after_title($post) {
+      function wpldp_edit_form_advanced($post) {
           if ($post->post_type == 'ldp_resource') {
               $container = get_permalink();
               $term = get_the_terms($post->post_id, 'ldp_container');
@@ -320,6 +347,7 @@ if (!class_exists('WpLdp')) {
       }
 
       function ldp_enqueue_script() {
+          wp_enqueue_media();
           wp_enqueue_script('', 'https://code.jquery.com/jquery-2.1.4.min.js');
 
           // Loading the Plugin-javascript file
