@@ -13,13 +13,14 @@
 // If the file is accessed outside of index.php (ie. directly), we just deny the access
 defined('ABSPATH') or die("No script kiddies please!");
 
+require_once('wpldp-utils.php');
 require_once('wpldp-taxonomy.php');
 require_once('wpldp-settings.php');
 
 if (!class_exists('WpLdp')) {
     class WpLdp {
 
-      protected static $version_number = '1.0.0';
+      protected static $version_number = '1.0.1';
 
       /**
        * Default Constructor
@@ -78,6 +79,39 @@ if (!class_exists('WpLdp')) {
       }
 
       private function wpldp_db_upgrade() {
+        $flush_cache = wp_cache_flush();
+        global $wpdb;
+        $wpdb->query(
+          "UPDATE $wpdb->postmeta
+              SET `meta_key` = replace( `meta_key` , 'ldp_', '' );"
+        );
+
+        $wpdb->query(
+           "DELETE FROM $wpdb->options
+            WHERE `option_name` LIKE '%transient%';"
+        );
+
+        $result = $wpdb->get_results(
+          "SELECT `option_name`
+           FROM $wpdb->options
+           WHERE `option_name` LIKE '%ldp_container_%';"
+        );
+
+        foreach ( $result as $current ) {
+          $option = get_option($current->option_name);
+          if (!empty($option)) {
+            if (!empty($option['ldp_model'])) {
+              $option['ldp_model'] = str_replace('ldp_', '', $option['ldp_model']);
+            }
+
+            if (!empty($option['ldp_included_fields_list'])) {
+              $option['ldp_included_fields_list'] = str_replace('ldp_', '', $option['ldp_included_fields_list']);
+            }
+            update_option($current->option_name, $option, false);
+          }
+        }
+
+        $flush_cache = wp_cache_flush();
         return true;
       }
 
@@ -298,9 +332,10 @@ if (!class_exists('WpLdp')) {
       ################################
       function wpldp_edit_form_advanced($post) {
           if ($post->post_type == 'ldp_resource') {
-              $container = get_permalink();
+              $resourceUri = WpLdpUtils::getResourceUri($post);
+
               $term = get_the_terms($post->post_id, 'ldp_container');
-              if (!empty($term)) {
+              if (!empty($term) && !empty($resourceUri)) {
                 $termId = $term[0]->term_id;
                 $termMeta = get_option("ldp_container_$termId");
 
@@ -325,12 +360,13 @@ if (!class_exists('WpLdp')) {
                 echo '<div id="ldpform"></div>';
                 echo '<script>';
                 echo "var store = new MyStore({
-                            container: '$container',
+                            container: '$resourceUri',
                             context: '" . get_option('ldp_context', 'http://owl.openinitiative.com/oicontext.jsonld') ."',
                             template:\"{{{form '{$term[0]->slug}'}}}\",
                             models: $ldpModel
                       });";
-                echo "store.render('#ldpform', '$container', undefined, undefined, '{$term[0]->slug}', 'ldp_');";
+                echo "store.render('#ldpform', '$resourceUri', undefined, undefined, '{$term[0]->slug}');";
+
                 // echo "var actorsList = store.list('/ldp_container/actor/');";
                 // echo "console.log(actorsList);";
                 echo '</script>';
@@ -339,39 +375,49 @@ if (!class_exists('WpLdp')) {
       }
 
       function save_ldp_meta_for_post($resource_id) {
+        $fields = WpLdpUtils::getResourceFieldsList($resource_id);
+
+        if (!empty($fields)) {
           foreach($_POST as $key => $value) {
-              if(substr($key, 0, 4) == "ldp_") {
+            foreach($fields as $field) {
+              if ($key === $field->name) {
                   update_post_meta($resource_id, $key, $value);
               }
+            }
           }
+        }
       }
 
       function ldp_enqueue_script() {
-          wp_enqueue_media();
-          wp_enqueue_script('', 'https://code.jquery.com/jquery-2.1.4.min.js');
+          global $pagenow, $post_type;
+          $screen = get_current_screen();
+          if ($post_type == 'ldp_resource') {
+            wp_enqueue_media();
+            wp_enqueue_script('', 'https://code.jquery.com/jquery-2.1.4.min.js');
 
-          // Loading the Plugin-javascript file
-          wp_register_script(
-            'wpldpjs',
-            plugins_url('wpldp.js', __FILE__),
-            array('jquery')
-          );
-          wp_enqueue_script('wpldpjs');
+            // Loading the LDP-framework library
+            wp_register_script(
+              'ldpjs',
+              plugins_url('library/js/LDP-framework/ldpframework.js', __FILE__),
+              array('jquery')
+            );
+            wp_enqueue_script('ldpjs');
 
-          // Loading the LDP-framework library
-          wp_register_script(
-            'ldpjs',
-            plugins_url('library/js/LDP-framework/mystore.js', __FILE__),
-            array('jquery')
-          );
-          wp_enqueue_script('ldpjs');
+            // Loading the JSONEditor library
+            wp_register_script(
+              'jsoneditorjs',
+              plugins_url('library/js/node_modules/jsoneditor/dist/jsoneditor.min.js', __FILE__)
+            );
+            wp_enqueue_script('jsoneditorjs');
 
-          // Loading the JSONEditor library
-          wp_register_script(
-            'jsoneditorjs',
-            plugins_url('library/js/node_modules/jsoneditor/dist/jsoneditor.min.js', __FILE__)
-          );
-          wp_enqueue_script('jsoneditorjs');
+            // Loading the Plugin-javascript file
+            wp_register_script(
+              'wpldpjs',
+              plugins_url('wpldp.js', __FILE__),
+              array('jquery')
+            );
+            wp_enqueue_script('wpldpjs');
+          }
       }
 
       function ldp_enqueue_stylesheet() {
@@ -382,12 +428,12 @@ if (!class_exists('WpLdp')) {
         );
         wp_enqueue_style('wpldpcss');
 
-          // Loading the JSONEditor stylesheet
-          wp_register_style(
-            'jsoneditorcss',
-            plugins_url('library/js/node_modules/jsoneditor/dist/jsoneditor.min.css', __FILE__)
-          );
-          wp_enqueue_style('jsoneditorcss');
+        // Loading the JSONEditor stylesheet
+        wp_register_style(
+          'jsoneditorcss',
+          plugins_url('library/js/node_modules/jsoneditor/dist/jsoneditor.min.css', __FILE__)
+        );
+        wp_enqueue_style('jsoneditorcss');
       }
 
       #############################

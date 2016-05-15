@@ -2,16 +2,7 @@
 <?php header('Access-Control-Allow-Origin: *'); ?>
 <?php
   // Getting general information about the container associated with the current resource
-  $values = get_the_terms($post->ID, 'ldp_container');
-  if (empty($values[0])) {
-    $value = reset($values);
-  } else {
-    $value = $values[0];
-  }
-
-  $termMeta = get_option("ldp_container_$value->term_id");
-  $modelsDecoded = json_decode($termMeta["ldp_model"]);
-  $fields = $modelsDecoded->{$value->slug}->fields;
+  $fields = WpLdpUtils::getResourceFieldsList($post->ID);
   $rdfType = isset($termMeta["ldp_rdf_type"]) ? $termMeta["ldp_rdf_type"] : null;
 ?>
 {
@@ -24,11 +15,9 @@
             // Handling special case of editing trhough the wordpress admin backend
             if (!empty($referer) && strstr($referer, 'wp-admin/post.php')) {
               foreach($fields as $field) {
-                if (substr($field->name, 0, 4) == "ldp_") {
-                  echo('          "'.substr($field->name, 4).'": ');
-                  echo('' . json_encode(get_post_custom_values($field->name)[0]) . ',');
-                  echo "\n";
-                }
+                echo('          "'. $field->name .'": ');
+                echo('' . json_encode(get_post_custom_values($field->name)[0]) . ',');
+                echo "\n";
               }
             } else {
               $arrayToProcess = [];
@@ -71,7 +60,7 @@
 
               if (!empty($valuesArray)) {
                 foreach ($valuesArray as $fieldName => $values) {
-                  echo("          \"" . substr($fieldName, 4) . "\": [\n");
+                  echo("          \"" . $fieldName . "\": [\n");
                   $count = 0;
                   foreach($values as $value) {
                     if (!empty($value) && $value != '""') {
@@ -91,12 +80,10 @@
               }
 
               foreach($fields as $field) {
-                if (substr($field->name, 0, 4) == "ldp_") {
-                  if (!in_array($field->name, $fieldNotToRender)) {
-                    echo('          "'.substr($field->name, 4).'": ');
-                    echo('' . json_encode(get_post_custom_values($field->name)[0]) . ',');
-                    echo "\n";
-                  }
+                if (!in_array($field->name, $fieldNotToRender)) {
+                  echo('          "'. $field->name .'": ');
+                  echo('' . json_encode(get_post_custom_values($field->name)[0]) . ',');
+                  echo "\n";
                 }
               }
             }
@@ -104,7 +91,7 @@
             // Get user to retrieve associated posts !
             $user_login;
             foreach($fields as $field) {
-              if ($field->name == 'ldp_foaf:nick') {
+              if ($field->name == 'foaf:nick') {
                 $user_login = get_post_custom_values($field->name)[0];
               }
             }
@@ -130,7 +117,7 @@
                       echo "               {\n";
                       echo "                    \"url\": \"" . get_permalink ($post->ID) . "\",\n";
                       echo '                    "dc:title":' . json_encode($post->post_title) . ",\n";
-                      echo '                    "sioc:blogPost":' . json_encode($post->post_content) . "\n";
+                      echo '                    "sioc:blogPost":' . json_encode(substr($post->post_content, 0, 300)) . "\n";
                       if ($count < $loop->post_count) {
                         echo "               },\n";
                       } else {
@@ -145,7 +132,11 @@
             }
           ?>
           <?php if (!empty($rdfType)) echo "\"@type\" : \"$rdfType\",\n"; ?>
-          "@id": "<?php the_permalink(); ?>"
+          <?php
+          $resourceUri = WpLdpUtils::getResourceUri($post);
+
+          ?>
+          "@id": "<?php echo $resourceUri ?>"
         }
 <?php endwhile; ?>
     ]
