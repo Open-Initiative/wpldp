@@ -10,8 +10,7 @@ jQuery(function($) {
       // console.log(newContainerName);
       // store.render('#ldpform', containerName, undefined, undefined, newContainerName, 'ldp_');
 
-      var form = $('#post');
-      form.submit();
+      $('#post').submit();
   });
 
   $('input').keypress(function(event) {
